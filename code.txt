@@ -1,0 +1,150 @@
+import os
+import numpy as np
+import cv2
+import glob
+import imutils
+
+#Taking the images form the specified folder.
+image_paths = glob.glob('unstitchedImages2/*.jpg')
+images = []
+	
+#Reading Images from the folder one by one and displaying them.
+cnt=1
+for image in image_paths:
+    img = cv2.imread(image)
+	images.append(img)
+    srcimages="Source Image "+str(cnt)
+    cv2.imshow(srcimages,img)
+    cv2.waitKey(0)
+    cnt+=1
+    
+imageStitcher = cv2.Stitcher_create()
+error, stitched_img = imageStitcher.stitch(images)
+if not error:
+    def load_images_from_folder(folder):
+        images = []
+	for filename in os.listdir(folder):
+ 	           img = cv2.imread(os.path.join(folder,filename))
+            if img is not None:
+                images.append(img)
+        return images
+
+# function to detect and compute SIFT features of an image
+    def detect_and_compute_sift(image):
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        sift = cv2.SIFT_create()
+        keypoints1, descriptors1 = sift.detectAndCompute(gray, None)
+        return keypoints1, descriptors1,
+	
+# load images from folder
+    folder_path = "unstitchedImages2"
+    images = load_images_from_folder(folder_path)
+	
+# detect and compute SIFT features for each image
+    sift = cv2.SIFT_create()
+    # create BFMatcher object
+    sift_keypoints = []
+    sift_descriptors = []
+    count=1
+    nsift_keypoints=0
+
+    for img in images:
+        keypoints1, descriptors1 = detect_and_compute_sift(img)
+        nsift_keypoints+=len(keypoints1)
+        sift_keypoints.append(keypoints1)
+        sift_descriptors.append(descriptors1)
+        img_kp=cv2.drawKeypoints(img,keypoints1,None)
+	number="Keypoints in Image "+str(count)
+        cv2.imshow(number,img_kp)
+        cv2.waitKey(0)
+        count+=1
+    print("Total no of SIFT keypoints: ", nsift_keypoints) 
+    
+# get the list of image file names in the directory
+    img_files = os.listdir(folder_path)
+    img_files.sort()
+    bf = cv2.BFMatcher()
+
+# loop over each pair of consecutive images
+    num=1
+    for i in range(1, len(img_files)):
+    # load images
+        img1_path = os.path.join(folder_path, img_files[i-1])
+        img2_path = os.path.join(folder_path, img_files[i])
+        img1 = cv2.imread(img1_path)
+        img2 = cv2.imread(img2_path)
+
+    # find keypoints and descriptors for each image
+        kp1, des1 = sift.detectAndCompute(img1, None)
+        kp2, des2 = sift.detectAndCompute(img2, None)
+
+    # match descriptors between the images
+        matches = bf.knnMatch(des1, des2, k=2)
+
+    # apply ratio test to keep only good matches
+        good_matches = []
+        for m,n in matches:
+            if m.distance < 0.75*n.distance:
+ 	               good_matches.append(m)
+
+    # draw matched keypoints on a new image
+        img_matches = cv2.drawMatches(img1, kp1, img2, kp2, good_matches, None, 		flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        number = "Matches found in Image {} and in Image {}".format(i, i+1)
+        cv2.imshow(number, img_matches)
+	
+ 	   # show the matched keypoints for the current pair of images     
+        nofmatches="Number of matches found in Matched Image " + str(num) + ": "
+        print(nofmatches,end=" ")
+ 	       print(len(good_matches))
+
+# wait for a key press and then close all windows
+        cv2.waitKey(0)
+        #count+=2
+        #count_+=2
+        num+=1
+        
+    #making a screen for the stitched image.
+    stitched_img = cv2.copyMakeBorder(stitched_img, 10, 10, 10, 10, 				cv2.BORDER_CONSTANT, (0,0,0))
+    #gray-Scaling the stitched image
+    gray = cv2.cvtColor(stitched_img, cv2.COLOR_BGR2GRAY)
+    #Thresholding the grayscaled image based on black and whites in the grayscaled image
+    thresh_img = cv2.threshold(gray, 0, 255 , cv2.THRESH_BINARY)[1]
+	
+    #Masking the stitched image onto a rectangular mask for warping the stitched image
+    contours = cv2.findContours(thresh_img.copy(), cv2.RETR_EXTERNAL, 			cv2.CHAIN_APPROX_SIMPLE)
+    contours = imutils.grab_contours(contours)
+    areaOI = max(contours, key=cv2.contourArea)
+    mask = np.zeros(thresh_img.shape, dtype="uint8")
+    x, y, w, h = cv2.boundingRect(areaOI)
+    cv2.rectangle(mask, (x,y), (x + w, y + h), 255, -1)
+    minRectangle = mask.copy()
+    
+    sub = mask.copy()
+    while cv2.countNonZero(sub) > 0:
+ 	       minRectangle = cv2.erode(minRectangle, None)
+        sub = cv2.subtract(minRectangle, thresh_img)
+    contours = cv2.findContours(minRectangle.copy(), cv2.RETR_EXTERNAL, 			cv2.CHAIN_APPROX_SIMPLE)
+    contours = imutils.grab_contours(contours)
+    areaOI = max(contours, key=cv2.contourArea)
+    #cv2.imshow("Min Rectangle",minRectangle)
+    #cv2.waitKey(0)
+    x, y, w, h = cv2.boundingRect(areaOI)
+    stitched_img = stitched_img[y:y + h, x:x + w]
+    final_img=cv2.imread('stitchedOutputProcessed.png', 0)
+    cv2.imwrite("stitchedOutputProcessed.png", stitched_img)
+    cv2.imshow("Stitched Image Processed", stitched_img)
+    cv2.waitKey(0)
+    final_img=cv2.imread('stitchedOutputProcessed.png', 0)
+    print("Dimensions of Stitched Image in pixels: ", final_img.shape)
+    height, width=final_img.shape
+    num_pixels=width*height
+    print("Number of pixels in the image: ",num_pixels)
+    #print("Dimensions: ",final_img.ndim)
+
+ 	   #Keypoint Detection on the Processed Sticthed image
+ 	   #Matching the Keypoints between the images specified within the folder.
+     	    cv2.destroyAllWindows()
+
+else:
+    print("Images could not be stitched!")
+    print("Likely not enough keypoints being detected!")
